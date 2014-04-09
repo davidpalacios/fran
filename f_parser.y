@@ -10,10 +10,11 @@
 int yylineno;
 
 void yyerror(const char * s) {
-  fprintf(stderr, "error: '%s' - LINE '%d'\n", s, yylineno);
+  fprintf(stderr, "error: line %d: '%s' \n", yylineno, s);
 }
 
 int main() {
+	init_semantics();
 	yyparse();
 }
 
@@ -29,8 +30,8 @@ int main() {
 
 %error-verbose
 
-%token TP_BOOL BREAK TO_CIRCLE CONST DEFFUNC <cst_double>TP_DOUBLE ELSE B_FALSE L_FOR TO_GLOOP TO_GSTRIP IF IN
-%token <cst_int>TP_INT TO_LABEL TO_LINE M_MAIN NEW PAINT TO_POINT TO_POLYGON PRINT PROGRAM READ RETURN <cst_string>TP_STRING
+%token TP_BOOL BREAK TO_CIRCLE CONST DEFFUNC TP_DOUBLE ELSE B_FALSE L_FOR TO_GLOOP TO_GSTRIP IF IN
+%token TP_INT TO_LABEL TO_LINE M_MAIN NEW PAINT TO_POINT TO_POLYGON PRINT PROGRAM READ RETURN TP_STRING
 %token B_TRUE USE VOID L_WHILE WINDOW THIS_BGC THIS_COLOR THIS_LINECOLOR THIS_LINEWIDTH THIS_POINTA
 %token THIS_POINTB THIS_POINTS THIS_POSX THIS_POSY THIS_RADIO THIS_SIZE THIS_TEXT THIS_TYPE THIS_WIDTH
 %token THIS_HEIGHT THIS_WINDOWICON THIS_WINDOWLABEL CST_INT CST_DOUBLE CST_STRING ID LCURLYB RCURLYB ASSIGN
@@ -41,7 +42,7 @@ int main() {
 
 %%
 
-program: 		PROGRAM ID LCURLYB imports header_var_decl method_decl main_method RCURLYB
+program: 		imports PROGRAM ID { add_program(yylval.cst_string) } LCURLYB header_var_decl method_decl main_method RCURLYB
 	 		;
 
 imports: 		imports USE ID SEMICOLON 
@@ -78,8 +79,11 @@ decl_location:		ID dl
 dl:			LBRAC RBRAC 
 			|
 			;
+
+assign:			ASSIGN sa
+			;
 	
-simple_assign:		ASSIGN sa 
+simple_assign:		assign 
 			|
 			;
   		    	 
@@ -257,7 +261,7 @@ objLab1:		THIS_TEXT simple_assign COMMA
 			THIS_TYPE simple_assign
 			;
 
-more_decl:		more_decl COMMA dl simple_assign
+more_decl:		more_decl COMMA ID dl simple_assign
  			|
  			;
 
@@ -308,7 +312,7 @@ assign_var:		location assign_var1
 			| location LESSLESS
 			;
 
-assign_var1: 		simple_assign
+assign_var1: 		assign
 			| assing_op exp
 			;
 
