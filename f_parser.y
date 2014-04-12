@@ -9,13 +9,99 @@
 
 int yylineno;
 
+F_Types current_type;
+F_Modifiers current_modifier;
+
 void yyerror(const char * s) {
-  fprintf(stderr, "error: line %d: '%s' \n", yylineno, s);
+	fprintf(stderr, "error: line %d: '%s' \n", yylineno, s);
+}
+
+void convert_type_to_array( F_Types type ) {
+
+	switch ( type ) {
+	
+		case t_int: 
+			current_type = t_array_int; 
+			break;
+		case t_double: 
+			current_type = t_array_double; 
+			break;
+		case t_string: 
+			current_type = t_array_string; 
+			break;
+		case t_boolean: 
+			current_type = t_array_boolean; 
+			break;
+		case o_circle: 
+			current_type = o_array_circle; 
+			break;
+		case o_gloop: 
+			current_type = o_array_gloop; 
+			break;
+		case o_gstrip: 
+			current_type = o_array_gstrip; 
+			break;
+		case o_line: 
+			current_type = o_array_line; 
+			break;
+		case o_point: 
+			current_type = o_array_point;
+			break;
+		case o_polygon:	
+			current_type = o_array_polygon;
+			break;
+		case o_label: 
+			current_type = o_array_label;
+			break;
+	}
+}
+
+void convert_array_to_type( F_Types type ) {
+
+	switch ( type ) {
+	
+		case t_array_int: 
+			current_type = t_int; 
+			break;
+		case t_array_double: 
+			current_type = t_double; 
+			break;
+		case t_array_string: 
+			current_type = t_string; 
+			break;
+		case t_array_boolean: 
+			current_type = t_boolean; 
+			break;
+		case o_array_circle: 
+			current_type = o_circle; 
+			break;
+		case o_array_gloop: 
+			current_type = o_gloop; 
+			break;
+		case o_array_gstrip: 
+			current_type = o_gstrip; 
+			break;
+		case o_array_line: 
+			current_type = o_line; 
+			break;
+		case o_array_point: 
+			current_type = o_point;
+			break;
+		case o_array_polygon:	
+			current_type = o_polygon;
+			break;
+		case o_array_label: 
+			current_type = o_label;
+			break;
+	}
 }
 
 int main() {
 	init_semantics();
 	yyparse();
+	print_fran_final_status();
+	free_memory();
+	return (0);
 }
 
 %}
@@ -42,14 +128,14 @@ int main() {
 
 %%
 
-program: 		imports PROGRAM ID { add_program(yylval.cst_string) } LCURLYB header_var_decl method_decl main_method RCURLYB
+program: 		imports PROGRAM ID { add_program(yylval.cst_string); } LCURLYB header_var_decl method_decl main_method RCURLYB
 	 		;
 
 imports: 		imports USE ID SEMICOLON 
 	 		|
 	 		;
 
-header_var_decl:	header_var_decl type decl_location simple_assign more_decl SEMICOLON
+header_var_decl:	header_var_decl ref type decl_location { add_global_to_current_program(yylval.cst_string, current_modifier, current_type ); } simple_assign more_decl SEMICOLON
 			|
 			;
 
@@ -57,27 +143,27 @@ type: 			type_prim
 			| type_obj
 			;
 
-type_prim:		TP_DOUBLE 
-			| TP_INT 
-			| TP_BOOL
-			| TP_STRING
+type_prim:		TP_DOUBLE   { current_type = t_double; } 
+			| TP_INT    { current_type = t_int; }
+			| TP_BOOL   { current_type = t_boolean; } 
+			| TP_STRING { current_type = t_string; } 
 			;
 
-type_obj:		TO_CIRCLE 
-			| TO_GLOOP 
-			| TO_GSTRIP  
-			| TO_LINE
-			| TO_POINT 
-			| TO_POLYGON 
-			| TO_LABEL
+type_obj:		TO_CIRCLE   { current_type = o_circle; } 
+			| TO_GLOOP  { current_type = o_gloop; } 
+			| TO_GSTRIP { current_type = o_gstrip; } 
+			| TO_LINE   { current_type = o_line; } 
+			| TO_POINT  { current_type = o_point; } 
+			| TO_POLYGON{ current_type = o_polygon; } 
+			| TO_LABEL  { current_type = o_label; } 
 			;
 	  
 decl_location:		ID dl 
-			| LBRAC RBRAC ID
+			| LBRAC RBRAC ID { convert_type_to_array( current_type ); }
 			;
 
-dl:			LBRAC RBRAC 
-			|
+dl:			LBRAC RBRAC { convert_type_to_array( current_type ); } 
+			| { convert_array_to_type( current_type ); } 
 			;
 
 assign:			ASSIGN sa
@@ -261,31 +347,40 @@ objLab1:		THIS_TEXT simple_assign COMMA
 			THIS_TYPE simple_assign
 			;
 
-more_decl:		more_decl COMMA ID dl simple_assign
+more_decl:		more_decl COMMA ID dl { add_global_to_current_program(yylval.cst_string, current_modifier, current_type ); } simple_assign
  			|
  			;
 
-method_decl:		method_decl DEFFUNC method_type ID LPAR method_par_decl RPAR method_block
+method_decl:		method_decl DEFFUNC method_type ID { add_procedure_to_current_program( yylval.cst_string, current_type ); } LPAR method_par_decl RPAR method_block
 			|
 			;
 
-method_type:		VOID 
+method_type:		VOID { current_type = t_void; }
   	    		| type dl
   	    		;
 
-method_par_decl:	ref type decl_location mpd
+method_par_decl:	ref type decl_location { add_param_to_current_procedure(yylval.cst_string, current_modifier, current_type ); } mpd
 			|
 			;
 
-ref:			CONST 
-	            	|
+ref:			CONST { current_modifier = constant; } 
+	            	|     { current_modifier = nonconstant; }
 	            	;
 		      	
 mpd:			mpd COMMA method_par_decl
      			|
       			;
 
-method_block:		LCURLYB header_var_decl statements RCURLYB
+more_local_decl:	more_local_decl COMMA ID dl { add_local_to_current_procedure( yylval.cst_string, current_modifier, current_type ); } simple_assign
+			|
+			;
+
+method_local_var: 	method_local_var ref type decl_location { add_local_to_current_procedure( yylval.cst_string, current_modifier, current_type ); } simple_assign more_local_decl SEMICOLON
+			|
+			;
+
+
+method_block:		LCURLYB method_local_var statements RCURLYB
        			;
 
 statements: 		statements statement 
@@ -366,7 +461,7 @@ window_prop: 		THIS_WIDTH simple_assign COMMA
 			THIS_WINDOWLABEL simple_assign COMMA
 			;
 
-main_method :  		DEFFUNC VOID M_MAIN LPAR RPAR method_block
+main_method :  		DEFFUNC VOID { current_type = t_void; } M_MAIN { add_procedure_to_current_program( yylval.cst_string, current_type ); } LPAR RPAR method_block
 			;
 
 %%
