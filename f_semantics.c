@@ -4,21 +4,21 @@
 #include <glib.h>
 #include "f_shared.h"
 
-char *f_modifier_names[] = {
+static char *f_modifier_names[] = {
 	"const",
 	"nonconst"
 };
 
-char *f_type_names[] = {
+static char *f_type_names[] = {
 	"void",
 	"int",
 	"double",
 	"string",
-	"boolean",
+	"bool",
 	"array of type int",
 	"array of type double",
 	"array of type string",
-	"array of type boolean",
+	"array of type bool",
 	"Circle",
 	"GLoop",
 	"GStrip",
@@ -26,18 +26,18 @@ char *f_type_names[] = {
 	"Point",
 	"Polygon",
 	"Label",
-	"array of type circle",
-	"array of type gloop",
-	"array of type gstrip",
-	"array of type line",
-	"array of type point",
-	"array of type polygon",
-	"array of type label"
+	"array of type Circle",
+	"array of type GLoop",
+	"array of type GStrip",
+	"array of type Line",
+	"array of type Point",
+	"array of type Polygon",
+	"array of type Label"
 };
 
 static char *error_msgs[] = {
 	"Duplicate program",
-	"Duplicate function",
+	"Duplicate procedure",
 	"Unknown Fran error",
 	"Duplicate parameter",
 	"Duplicate global variable",
@@ -47,7 +47,7 @@ static char *error_msgs[] = {
 
 typedef enum {
 	duplicate_program,
-	duplicate_method,
+	duplicate_procedure,
 	fran_error,
 	duplicate_parameter,
 	duplicate_global_Var,
@@ -74,6 +74,7 @@ typedef struct {
 	F_Types proc_type;     
 	GHashTable *procedure_params;
 	GHashTable *procedure_vars;
+	GQueue *params_in_order;
 } Procedure;
 
 typedef struct {
@@ -107,6 +108,9 @@ void free_program_proc( gpointer key, gpointer value, gpointer user_data ) {
 	Procedure *proc = (Procedure * ) value;
 	g_hash_table_foreach( proc -> procedure_params, (GHFunc) free_program_vars, "" );
 	g_hash_table_foreach( proc -> procedure_vars, (GHFunc) free_program_vars, "" );
+	g_hash_table_destroy( proc -> procedure_params );
+	g_hash_table_destroy( proc -> procedure_vars );
+	g_queue_free( proc -> params_in_order );
 	g_slice_free( Procedure, (Procedure * ) value );
 
 }
@@ -116,6 +120,8 @@ void free_programs( gpointer key, gpointer value, gpointer user_data ) {
 	Fran_Program *current_program = (Fran_Program * ) value;
 	g_hash_table_foreach( current_program -> program_vars, (GHFunc) free_program_vars, "" );
 	g_hash_table_foreach( current_program -> program_procedures, (GHFunc) free_program_proc, "" );
+	g_hash_table_destroy( current_program -> program_vars );
+	g_hash_table_destroy( current_program -> program_procedures );
 	g_slice_free( Fran_Program, (Fran_Program * ) value );
 
 }
@@ -123,6 +129,8 @@ void free_programs( gpointer key, gpointer value, gpointer user_data ) {
 void free_memory() {
 
 	g_hash_table_foreach( fran_programs, (GHFunc) free_programs, "" );
+	g_hash_table_destroy( fran_programs );
+	g_slice_free( F_State, current_state );
 
 }
 
@@ -134,7 +142,7 @@ void print_error_and_exit( Error_Types type, char *msg ) {
 	switch ( type ) {
 
 		case duplicate_global_Var:
-		case duplicate_method:
+		case duplicate_procedure:
 
 			long_msg = g_strconcat( error_line, ": ", error_msgs[ type ], " '", 
 				msg, "' in program '", current_state -> current_program_name, "'", NULL );
@@ -185,7 +193,7 @@ void add_program( char *program_name ) {
 		new_program -> program_vars = g_hash_table_new( g_str_hash, g_str_equal );
 		new_program -> program_procedures = g_hash_table_new( g_str_hash, g_str_equal );
 		current_state -> current_program_name = program_name;
-		g_hash_table_insert(fran_programs, (gpointer) program_name, (gpointer) new_program );		
+		g_hash_table_insert( fran_programs, (gpointer) program_name, (gpointer) new_program );		
 
 	} 
 
@@ -197,7 +205,7 @@ void add_procedure_to_current_program( char *proc_name, F_Types proc_type ) {
 
 	if ( g_hash_table_lookup( current_program -> program_procedures, (gpointer) proc_name ) != NULL ){
 
-		print_error_and_exit( duplicate_method, proc_name );
+		print_error_and_exit( duplicate_procedure, proc_name );
 
 	} else {
 
@@ -205,6 +213,7 @@ void add_procedure_to_current_program( char *proc_name, F_Types proc_type ) {
 		new_procedure -> proc_type = proc_type;
 		new_procedure -> procedure_params = g_hash_table_new( g_str_hash, g_str_equal );
 		new_procedure -> procedure_vars = g_hash_table_new( g_str_hash, g_str_equal );
+		new_procedure -> params_in_order = g_queue_new();
 		current_state -> current_procedure_name = proc_name;
 		current_state -> current_procedure_type = proc_type;
 
@@ -243,7 +252,7 @@ void add_param_to_current_procedure( char *var_name, F_Modifiers var_modifier, F
 
 	if ( procedure_to_add_param == NULL ) {
 
-		print_error_and_exit( fran_error, " method not found " );
+		print_error_and_exit( fran_error, " procedure not found " );
 
 	}
 
@@ -257,6 +266,7 @@ void add_param_to_current_procedure( char *var_name, F_Modifiers var_modifier, F
 		new_param_var -> var_type = var_type;
 		new_param_var -> var_modifier = var_modifier;
 		g_hash_table_insert( procedure_to_add_param -> procedure_params, (gpointer) var_name, (gpointer) new_param_var ); 
+		g_queue_push_tail( procedure_to_add_param -> params_in_order, (gpointer) var_type );
 
 	}
 
@@ -289,7 +299,7 @@ void add_local_to_current_procedure( char *var_name, F_Modifiers var_modifier, F
 
 	if ( procedure_to_add_local == NULL ) {
 
-		print_error_and_exit( fran_error, " method not found " );
+		print_error_and_exit( fran_error, " procedure not found " );
 
 	}
 
